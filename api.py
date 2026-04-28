@@ -1,5 +1,6 @@
 # api.py
 from fastapi import FastAPI, HTTPException, BackgroundTasks, UploadFile, File, Form
+, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
@@ -17,6 +18,16 @@ import io
 from engine.subgroup_discovery import run_discovery
 
 import numpy as np
+from engine.causal_analysis import run_causal_analysis
+
+import io as io_module
+from typing import Dict, Any, List, Optional
+import pandas as pd  # you already have this somewhere, make sure it's present
+import json
+# In-memory store for causal results
+causal_results = {}
+
+
 
 def convert_numpy(obj):
     """Recursively convert numpy types to native Python types for JSON serialization."""
@@ -178,6 +189,129 @@ async def scan_uploaded_file(
 async def health_check():
     return {"status": "healthy", "timestamp": datetime.now().isoformat()}
 
+
+# class CausalRequest(BaseModel):
+#     dataset_path: str
+#     protected_attributes: List[str]
+#     outcome_column: str
+#     treatment: Optional[str] = None
+
+# @app.post("/causal")
+# async def run_causal(request: CausalRequest, background_tasks: BackgroundTasks):
+#     """Run causal DAG analysis."""
+#     job_id = str(uuid.uuid4())
+    
+#     causal_results[job_id] = {
+#         "job_id": job_id,
+#         "status": "running",
+#         "results": None,
+#         "error": None
+#     }
+    
+#     background_tasks.add_task(_run_causal_job, job_id, request)
+    
+#     return {"job_id": job_id, "status": "running"}
+
+# def _run_causal_job(job_id: str, request: CausalRequest):
+#     try:
+#         results = run_causal_analysis(
+#             filepath=request.dataset_path,
+#             protected_attributes=request.protected_attributes,
+#             outcome_col=request.outcome_column,
+#             treatment=request.treatment
+#         )
+#         causal_results[job_id]["status"] = "complete"
+#         causal_results[job_id]["results"] = results
+#     except Exception as e:
+#         causal_results[job_id]["status"] = "failed"
+#         causal_results[job_id]["error"] = str(e)
+
+# @app.get("/causal/{job_id}")
+# async def get_causal_results(job_id: str):
+#     """Get causal analysis results."""
+#     if job_id not in causal_results:
+#         raise HTTPException(status_code=404, detail="Job not found")
+#     return convert_numpy(causal_results[job_id])
+
+class CausalRequest(BaseModel):
+    filepath: Optional[str] = None
+    protected_attributes: List[str]
+    outcome_column: str
+    disparities: List[Dict[str, Any]]
+
+
+@app.post("/causal")
+async def run_causal(request: CausalRequest, background_tasks: BackgroundTasks):
+    """Run causal analysis on a dataset with disparity results."""
+    job_id = str(uuid.uuid4())
+    
+    scan_jobs[job_id] = {
+        "job_id": job_id,
+        "status": "queued",
+        "progress": 0,
+        "results": None,
+        "error": None,
+        "type": "causal"
+    }
+    
+    background_tasks.add_task(_run_causal_job, job_id, request)
+    
+    return {"job_id": job_id, "status": "queued"}
+
+
+@app.post("/causal/upload")
+async def causal_from_scan(
+    file: UploadFile = File(None),
+    protected_attributes: str = Form(...),
+    outcome_column: str = Form(...),
+    disparities: str = Form("[]")
+):
+    """Run causal analysis directly from uploaded file + scan results."""
+    
+    content = await file.read() if file else None
+    filepath = None
+    
+    if content and file:
+        df = pd.read_csv(io_module.BytesIO(content))
+        df.columns = df.columns.str.lower().str.strip()
+        filepath = f"/tmp/{file.filename}"
+        df.to_csv(filepath, index=False)
+    
+    protected_attrs = [a.strip() for a in protected_attributes.split(",")]
+    disparities_list = json.loads(disparities)
+    
+    if not filepath:
+        raise HTTPException(status_code=400, detail="File required")
+    
+    results = run_causal_analysis(
+        filepath=filepath,
+        protected_attributes=protected_attrs,
+        outcome_col=outcome_column,
+        disparities=disparities_list
+    )
+    
+    return convert_numpy(results)
+
+
+def _run_causal_job(job_id: str, request: CausalRequest):
+    """Background causal analysis job."""
+    try:
+        scan_jobs[job_id]["status"] = "running"
+        
+        results = run_causal_analysis(
+            filepath=request.filepath,
+            protected_attributes=request.protected_attributes,
+            outcome_col=request.outcome_column,
+            disparities=request.disparities
+        )
+        
+        scan_jobs[job_id]["status"] = "complete"
+        scan_jobs[job_id]["progress"] = 100
+        scan_jobs[job_id]["results"] = convert_numpy(results)
+        
+    except Exception as e:
+        scan_jobs[job_id]["status"] = "failed"
+        scan_jobs[job_id]["error"] = str(e)
 
 if __name__ == "__main__":
     import uvicorn
