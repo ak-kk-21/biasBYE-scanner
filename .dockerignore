@@ -1,0 +1,6 @@
+engine/__pycache__/
+*.pyc
+.env
+.git
+venv/
+__pycache__/
