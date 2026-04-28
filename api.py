@@ -1,6 +1,5 @@
 # api.py
-from fastapi import FastAPI, HTTPException, BackgroundTasks, UploadFile, File, Form
-, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, BackgroundTasks, UploadFile, File, Form, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
