@@ -50,8 +50,7 @@ app = FastAPI(title="BiasBYE Scanner API", version="1.0.0")
 # Allow your Angular app to call this
 app.add_middleware(
     CORSMiddleware,
-    # allow_origins=["http://localhost:4200", "https://biasbye-platform.web.app"],
-    allow_origins=["*"],
+    allow_origins=["http://localhost:4200", "https://biasbye-platform.web.app"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
