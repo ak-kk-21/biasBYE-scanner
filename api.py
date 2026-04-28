@@ -1,5 +1,5 @@
 # api.py
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
@@ -8,6 +8,11 @@ import os
 from pathlib import Path
 import uuid
 from datetime import datetime
+from typing import Optional
+import pandas as pd
+from engine.utils import detect_protected_attributes, detect_outcome_column
+
+import io
 
 from engine.subgroup_discovery import run_discovery
 
@@ -128,7 +133,46 @@ async def get_scan_results(job_id: str):
     
     return convert_numpy(scan_jobs[job_id]["results"])
 
-
+@app.post("/scan/upload")
+async def scan_uploaded_file(
+    file: UploadFile = File(...),
+    protected_attributes: str = Form(None),
+    outcome_column: str = Form(None),
+    positive_value: int = Form(1),
+    min_subgroup_size: int = Form(30)
+):
+    """Accept a CSV file directly and run the scan."""
+    
+    # Read CSV content
+    content = await file.read()
+    df = pd.read_csv(io.BytesIO(content))
+    df.columns = df.columns.str.lower().str.strip()
+    
+    # Parse protected attributes
+    if protected_attributes:
+        protected_attrs = [a.strip() for a in protected_attributes.split(",")]
+    else:
+        protected_attrs = detect_protected_attributes(df.columns.tolist())
+    
+    # Auto-detect outcome if not provided
+    outcome = outcome_column
+    if not outcome:
+        outcome = detect_outcome_column(df)
+    
+    # Save temp file for the engine
+    temp_path = f"/tmp/{file.filename}"
+    df.to_csv(temp_path, index=False)
+    
+    # Run scan
+    results = run_discovery(
+        filepath=temp_path,
+        protected_attributes=protected_attrs,
+        outcome_col=outcome,
+        positive_value=positive_value,
+        min_subgroup_size=min_subgroup_size
+    )
+    
+    return convert_numpy(results)
 
 @app.get("/health")
 async def health_check():
