@@ -214,6 +214,13 @@ def run_discovery(
     # Load data
     df = load_dataset(filepath)
     
+    # Normalize inputs to match cleaned columns (lowercase, no spaces, hyphens to underscores)
+    if protected_attributes is not None:
+        protected_attributes = [a.lower().strip().replace('-', '_') for a in protected_attributes]
+    
+    if outcome_col is not None:
+        outcome_col = outcome_col.lower().strip().replace('-', '_')
+
     # Auto-detect if not specified
     if protected_attributes is None:
         protected_attributes = detect_protected_attributes(df.columns.tolist())

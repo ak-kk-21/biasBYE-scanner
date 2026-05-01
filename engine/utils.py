@@ -16,7 +16,7 @@ PROTECTED_ATTRIBUTES = [
 def load_dataset(filepath: str) -> pd.DataFrame:
     """Load CSV and normalize column names."""
     df = pd.read_csv(filepath)
-    df.columns = df.columns.str.lower().str.strip()
+    df.columns = df.columns.str.lower().str.strip().str.replace('-', '_')
     return df
 
 

@@ -156,17 +156,19 @@ async def scan_uploaded_file(
     # Read CSV content
     content = await file.read()
     df = pd.read_csv(io.BytesIO(content))
-    df.columns = df.columns.str.lower().str.strip()
+    df.columns = df.columns.str.lower().str.strip().str.replace('-', '_')
     
-    # Parse protected attributes
+    # Parse and normalize protected attributes
     if protected_attributes:
-        protected_attrs = [a.strip() for a in protected_attributes.split(",")]
+        protected_attrs = [a.strip().lower().replace('-', '_') for a in protected_attributes.split(",")]
     else:
         protected_attrs = detect_protected_attributes(df.columns.tolist())
     
-    # Auto-detect outcome if not provided
+    # Auto-detect outcome if not provided, else normalize
     outcome = outcome_column
-    if not outcome:
+    if outcome:
+        outcome = outcome.lower().strip().replace('-', '_')
+    else:
         outcome = detect_outcome_column(df)
     
     # Save temp file for the engine
