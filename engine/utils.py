@@ -2,7 +2,7 @@
 
 import pandas as pd
 import numpy as np
-from typing import List, Dict, Tuple, Optional
+from typing import List, Dict, Tuple, Optional, Any
 
 
 # Protected attribute candidates (same as your Angular model)
