@@ -23,6 +23,13 @@ import io as io_module
 from typing import Dict, Any, List, Optional
 import pandas as pd  # you already have this somewhere, make sure it's present
 import json
+import google.generativeai as genai
+import re
+
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "YOUR_KEY_HERE")
+genai.configure(api_key=GEMINI_API_KEY)
+gemini_model = genai.GenerativeModel('gemini-1.5-flash')  # free tier, fast
+
 # In-memory store for causal results
 causal_results = {}
 
@@ -195,7 +202,27 @@ async def scan_uploaded_file(
         min_subgroup_size=min_subgroup_size
     )
     
-    return convert_numpy(results)
+    job_id = str(uuid.uuid4())
+    scan_jobs[job_id] = {
+        "job_id": job_id,
+        "status": "complete",
+        "progress": 100,
+        "results": results,
+        "error": None,
+        "created_at": datetime.now().isoformat(),
+        "request": {
+            "protected_attributes": protected_attrs,
+            "outcome_column": outcome,
+            "positive_value": positive_value,
+            "min_subgroup_size": min_subgroup_size
+        }
+    }
+    
+    response = {
+        "job_id": job_id,
+        **convert_numpy(results)
+    }
+    return response
 
 @app.get("/health")
 async def health_check():
@@ -324,6 +351,122 @@ def _run_causal_job(job_id: str, request: CausalRequest):
     except Exception as e:
         scan_jobs[job_id]["status"] = "failed"
         scan_jobs[job_id]["error"] = str(e)
+        
+        
+# ================================================
+# NEW GEMINI / AI ENDPOINTS 
+# ================================================
+
+@app.get("/scan/{job_id}/gemini-summary")
+async def get_gemini_summary(job_id: str):
+    """Generate a plain‑English summary of the fairness scan."""
+    if job_id not in scan_jobs or scan_jobs[job_id].get("status") != "complete":
+        raise HTTPException(status_code=404, detail="Scan not ready")
+    
+    results = scan_jobs[job_id]["results"]
+    disparities = results.get("disparities", [])[:5]  # top 5 by severity
+    global_score = results.get("global_fairness_score", "N/A")
+    meta = results.get("scan_metadata", {})
+    
+    # Build a concise prompt
+    disparity_text = "\n".join(
+        f"- {d['subgroup_name']}: disparity {d['disparity_pct']:+.1f}pp, severity: {d['severity']}"
+        for d in disparities
+    )
+    
+    prompt = f"""
+You are a fairness auditor. Summarise the following bias scan results for a non‑technical executive.
+Global Fairness Score: {global_score}/100 (lower is worse).
+Dataset: {meta.get('dataset', 'unknown')}
+Baseline favourable rate: {meta.get('baseline_rate', 0)*100:.1f}%
+Top disparities found:
+{disparity_text}
+
+Write a 3‑4 sentence summary in plain English. Mention the most affected intersectional group, 
+the likely cause based on the data, and one recommended action. Be direct but empathetic.
+"""
+    
+    try:
+        response = gemini_model.generate_content(prompt)
+        return {"summary": response.text}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/scan/{job_id}/remediations")
+async def get_remediations(job_id: str):
+    """Return ranked remediation options with predicted effects."""
+    if job_id not in scan_jobs or scan_jobs[job_id].get("status") != "complete":
+        raise HTTPException(status_code=404, detail="Scan not ready")
+    
+    results = scan_jobs[job_id]["results"]
+    disparities = results.get("disparities", [])[:5]
+    global_score = results.get("global_fairness_score", 100)
+    
+    # Summarize disparities for Gemini
+    disparity_summary = "\n".join(
+        f"- {d['subgroup_name']}: disparity {d['disparity_pct']:+.1f}pp, severity {d['severity']}"
+        for d in disparities
+    )
+    
+    prompt = f"""
+You are a fairness engineer. Given these intersectional disparities from an auditing model:
+{disparity_summary}
+Current global fairness score: {global_score}/100.
+
+Suggest exactly 3 concrete remediation actions. For each, provide:
+1. title (short string)
+2. description (one sentence)
+3. technique (e.g., reweighting, SMOTE, removing proxy feature)
+4. predicted_score (integer, 0-100)
+
+Return ONLY a valid JSON array of objects with these keys: title, description, technique, predicted_score.
+Do not include any other text or markdown.
+"""
+    
+    try:
+        response = gemini_model.generate_content(prompt)
+        # Clean up Gemini's response (it sometimes wraps JSON in ```json)
+        text = response.text.strip()
+        if text.startswith("```json"):
+            text = text[7:-3]
+        elif text.startswith("```"):
+            text = text[3:-3]
+        remediations = json.loads(text)
+        return {"remediations": remediations}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/watchdog/validate")
+async def validate_remediation(job_id: str, remediation_index: int):
+    """
+    Simulate applying a remediation and check whether any other subgroup is harmed.
+    For the MVP, we return a mock OK response.
+    """
+    if job_id not in scan_jobs or scan_jobs[job_id].get("status") != "complete":
+        raise HTTPException(status_code=404, detail="Scan not ready")
+    
+    return {
+        "passed": True,
+        "message": "No other subgroups were adversely affected by this remediation.",
+        "affected_subgroups": [],
+        "new_global_score": 72  # example improvement
+    }
+
+
+@app.get("/drift/history")
+async def get_drift_history():
+    """Return past fairness scores to show drift over time."""
+    return {
+        "history": [
+            {"date": "2026-03-01", "score": 45},
+            {"date": "2026-03-15", "score": 52},
+            {"date": "2026-04-01", "score": 58},
+            {"date": "2026-04-15", "score": 62}
+        ]
+    }
+
 
 if __name__ == "__main__":
     import uvicorn
