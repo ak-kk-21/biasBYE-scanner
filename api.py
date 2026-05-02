@@ -160,7 +160,18 @@ async def scan_uploaded_file(
     
     # Parse and normalize protected attributes
     if protected_attributes:
-        protected_attrs = [a.strip().lower().replace('-', '_') for a in protected_attributes.split(",")]
+        # Check if it's a JSON stringified list (common from some clients)
+        if protected_attributes.strip().startswith('['):
+            try:
+                parsed = json.loads(protected_attributes)
+                if isinstance(parsed, list):
+                    protected_attrs = [str(a).strip().lower().replace('-', '_') for a in parsed]
+                else:
+                    protected_attrs = [str(protected_attributes).strip().lower().replace('-', '_')]
+            except:
+                protected_attrs = [a.strip().lower().replace('-', '_') for a in protected_attributes.split(",")]
+        else:
+            protected_attrs = [a.strip().lower().replace('-', '_') for a in protected_attributes.split(",")]
     else:
         protected_attrs = detect_protected_attributes(df.columns.tolist())
     
