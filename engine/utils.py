@@ -51,16 +51,57 @@ def binarize_column(df: pd.DataFrame, col: str) -> pd.Series:
         return pd.cut(df[col], bins=3, labels=['low', 'medium', 'high'])
 
 
+def create_positive_mask(df: pd.DataFrame, col: str, positive_value: Any) -> pd.Series:
+    """
+    Create a boolean mask for rows with a 'positive' outcome.
+    Supports:
+    - Numeric equality: 1, 0, etc.
+    - String equality: 'yes', 'approved'
+    - Comparison strings: '>=50k', '<30', '>0'
+    """
+    target = df[col]
+    
+    # Handle numeric comparisons if positive_value is a string like ">=50"
+    if isinstance(positive_value, str):
+        val_str = positive_value.strip()
+        
+        # Check for comparison operators
+        import re
+        match = re.match(r'^(>=|<=|>|<)\s*(-?\d+\.?\d*[kK]?)$', val_str)
+        if match:
+            op, threshold_str = match.groups()
+            # Handle 'k' suffix
+            threshold = float(threshold_str.lower().replace('k', '000'))
+            
+            if op == '>=': return target >= threshold
+            if op == '<=': return target <= threshold
+            if op == '>':  return target > threshold
+            if op == '<':  return target < threshold
+
+    # Default to direct equality (handles both numeric and string)
+    # Attempt to convert to numeric if the target column is numeric
+    if pd.api.types.is_numeric_dtype(target):
+        try:
+            return target == float(positive_value)
+        except (ValueError, TypeError):
+            pass
+            
+    return target.astype(str) == str(positive_value)
+
+
 def get_favorable_rate(df: pd.DataFrame, subgroup_mask: pd.Series, 
-                       outcome_col: str, positive_value: int = 1) -> float:
+                       outcome_col: str, positive_value: Any = 1) -> float:
     """Calculate favorable outcome rate for a subgroup."""
     subgroup = df[subgroup_mask]
     if len(subgroup) == 0:
         return 0.0
-    return (subgroup[outcome_col] == positive_value).mean()
+    
+    pos_mask = create_positive_mask(subgroup, outcome_col, positive_value)
+    return pos_mask.mean()
 
 
 def get_baseline_rate(df: pd.DataFrame, outcome_col: str, 
-                      positive_value: int = 1) -> float:
+                      positive_value: Any = 1) -> float:
     """Calculate overall favorable outcome rate."""
-    return (df[outcome_col] == positive_value).mean()
+    pos_mask = create_positive_mask(df, outcome_col, positive_value)
+    return pos_mask.mean()

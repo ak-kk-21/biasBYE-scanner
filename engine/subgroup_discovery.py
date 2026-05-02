@@ -13,7 +13,7 @@ import warnings
 
 from .utils import (
     load_dataset, detect_protected_attributes, detect_outcome_column,
-    get_favorable_rate, get_baseline_rate
+    get_favorable_rate, get_baseline_rate, create_positive_mask
 )
 from .statistical_tests import (
     two_proportion_z_test, cohens_h, classify_severity,
@@ -45,7 +45,7 @@ def beam_search_subgroups(
     df: pd.DataFrame,
     protected_attributes: List[str],
     outcome_col: str,
-    positive_value: int = 1,
+    positive_value: Any = 1,
     min_subgroup_size: int = 30,
     max_intersectionality: int = 3,
     beam_width: int = 20
@@ -82,7 +82,7 @@ def beam_search_subgroups(
             if subgroup_size < min_subgroup_size:
                 continue
             
-            fav_count = int((df.loc[mask, outcome_col] == positive_value).sum())
+            fav_count = int(create_positive_mask(df.loc[mask], outcome_col, positive_value).sum())
             fav_rate = fav_count / subgroup_size
             
             z_stat, p_val = two_proportion_z_test(
@@ -138,7 +138,7 @@ def beam_search_subgroups(
                     if subgroup_size < min_subgroup_size:
                         continue
                     
-                    fav_count = int((df.loc[mask, outcome_col] == positive_value).sum())
+                    fav_count = int(create_positive_mask(df.loc[mask], outcome_col, positive_value).sum())
                     fav_rate = fav_count / subgroup_size
                     
                     z_stat, p_val = two_proportion_z_test(
@@ -200,7 +200,7 @@ def run_discovery(
     filepath: str,
     protected_attributes: Optional[List[str]] = None,
     outcome_col: Optional[str] = None,
-    positive_value: int = 1,
+    positive_value: Any = 1,
     min_subgroup_size: int = 30,
     max_intersectionality: int = 3,
     beam_width: int = 20

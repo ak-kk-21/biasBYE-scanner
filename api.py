@@ -63,7 +63,7 @@ class ScanRequest(BaseModel):
     dataset_path: str  # Path to CSV in Cloud Storage or local
     protected_attributes: Optional[List[str]] = None
     outcome_column: Optional[str] = None
-    positive_value: int = 1
+    positive_value: Any = 1
     min_subgroup_size: int = 30
     max_intersectionality: int = 3
     beam_width: int = 20
@@ -148,7 +148,7 @@ async def scan_uploaded_file(
     file: UploadFile = File(...),
     protected_attributes: str = Form(None),
     outcome_column: str = Form(None),
-    positive_value: int = Form(1),
+    positive_value: str = Form("1"),
     min_subgroup_size: int = Form(30)
 ):
     """Accept a CSV file directly and run the scan."""
